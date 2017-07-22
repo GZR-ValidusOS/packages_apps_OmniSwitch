@@ -200,21 +200,33 @@ public class SwitchManager {
         }
     }
 
-    public void killTask(TaskDescription ad) {
+    public void killTask(TaskDescription ad, boolean close) {
         if (mConfiguration.mRestrictedMode){
             return;
+        }
+
+        if(close){
+            hide(false);
+        }
+
+        if (ad.isLocked()) {
+            // remove from locked
+            toggleLockedApp(ad, ad.isLocked(), false);
         }
 
         mAm.removeTask(ad.getPersistentTaskId());
         if (DEBUG){
             Log.d(TAG, "kill " + ad.getLabel());
         }
-        ad.setKilled();
-        mLoadedTasks.remove(ad);
-        // make sure we stay on the correct focus
-        // and killing is not changing it - overlay stays open here
-        restoreHomeStack();
-        mLayout.refresh();
+
+        if (!close) {
+            ad.setKilled();
+            mLoadedTasks.remove(ad);
+            // make sure we stay on the correct focus
+            // and killing is not changing it - overlay stays open here
+            restoreHomeStack();
+            mLayout.refresh();
+        }
     }
 
     /**
@@ -237,6 +249,9 @@ public class SwitchManager {
         Iterator<TaskDescription> nextTask = mLoadedTasks.iterator();
         while (nextTask.hasNext()) {
             TaskDescription ad = nextTask.next();
+            if (ad.isLocked()) {
+                continue;
+            }
             mAm.removeTask(ad.getPersistentTaskId());
             if (DEBUG){
                 Log.d(TAG, "kill " + ad.getLabel());
@@ -262,6 +277,9 @@ public class SwitchManager {
         nextTask.next();
         while (nextTask.hasNext()) {
             TaskDescription ad = nextTask.next();
+            if (ad.isLocked()) {
+                continue;
+            }
             mAm.removeTask(ad.getPersistentTaskId());
             if (DEBUG){
                 Log.d(TAG, "kill " + ad.getLabel());
@@ -287,6 +305,10 @@ public class SwitchManager {
 
         if (getTasks().size() >= 1){
             TaskDescription ad = getTasks().get(0);
+            if (ad.isLocked()) {
+                // remove from locked
+                toggleLockedApp(ad, ad.isLocked(), false);
+            }
             mAm.removeTask(ad.getPersistentTaskId());
             if (DEBUG){
                 Log.d(TAG, "kill " + ad.getLabel());
@@ -640,6 +662,47 @@ public class SwitchManager {
             RecentTasksLoader.getInstance(mContext).cancelLoadingTasks();
             RecentTasksLoader.getInstance(mContext).setSwitchManager(this);
             RecentTasksLoader.getInstance(mContext).loadTasksInBackground(10, false, false);
+        }
+    }
+
+    public void forceStop(TaskDescription ad, boolean close) {
+        if (mConfiguration.mRestrictedMode){
+            return;
+        }
+
+        if(close){
+            hide(false);
+        }
+
+        mAm.forceStopPackage(ad.getPackageName());
+        if (DEBUG){
+            Log.d(TAG, "forceStop " + ad.getLabel());
+        }
+
+        if (!close) {
+            ad.setKilled();
+            mLoadedTasks.remove(ad);
+            // make sure we stay on the correct focus
+            // and killing is not changing it - overlay stays open here
+            restoreHomeStack();
+            mLayout.refresh();
+        }
+    }
+
+    public void toggleLockedApp(TaskDescription ad, boolean isLockedApp, boolean refresh) {
+        List<String> lockedAppsList = mConfiguration.mLockedAppList;
+        if (DEBUG){
+            Log.d(TAG, "toggleLockedApp " + lockedAppsList);
+        }
+        if (isLockedApp) {
+            Utils.removedFromLockedApps(mContext, ad.getPackageName(), lockedAppsList);
+        } else {
+            Utils.addToLockedApps(mContext, ad.getPackageName(), lockedAppsList);
+        }
+        ad.setLocked(!isLockedApp);
+        ad.setNeedsUpdate(true);
+        if (refresh) {
+            mLayout.refresh();
         }
     }
 }

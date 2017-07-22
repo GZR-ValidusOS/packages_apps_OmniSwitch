@@ -41,7 +41,7 @@ public class PackageTextView extends TextView implements TaskDescription.ThumbCh
     private String mLabel;
     private Runnable mAction;
     private Handler mHandler = new Handler();
-    private static Bitmap setDefaultThumb;
+    private static Bitmap sDefaultThumb;
     private boolean mCanSideHeader;
     private boolean mThumbLoaded;
     private Drawable mCachedThumb;
@@ -137,8 +137,12 @@ public class PackageTextView extends TextView implements TaskDescription.ThumbCh
                     RecentTasksLoader.getInstance(mContext).loadTaskInfo(getTask());
                     mLabel = getTask().getLabel();
                 }
+
+                Drawable iconResized = BitmapUtils.resize(mContext.getResources(), getTask().getIcon(),
+                        configuration.mOverlayIconSizeDp, 0, configuration.mDensity);
+
                 Drawable d = BitmapUtils.overlay(mContext.getResources(), thumb,
-                        getTask().getIcon(),
+                        iconResized,
                         (int)(configuration.mThumbnailWidth * mThumbRatio),
                         (int)(configuration.mThumbnailHeight * mThumbRatio),
                         (configuration.mShowLabels ? getLabel() : null),
@@ -147,9 +151,11 @@ public class PackageTextView extends TextView implements TaskDescription.ThumbCh
                         configuration.mBgStyle != SwitchConfiguration.BgStyle.TRANSPARENT,
                         mCanSideHeader ? configuration.mSideHeader : false,
                         configuration.getOverlayHeaderWidth(),
-                        getTask().isDocked());
+                        getTask().isDocked(),
+                        getTask().isLocked(),
+                        configuration.mBackgroundOpacity);
                 if (cache) {
-                    BitmapCache.getInstance(mContext).putSharedThumbnail(mContext.getResources(), getTask(), d);
+                    BitmapCache.getInstance(mContext).putSharedThumbnail(getTask(), d);
                     mThumbLoaded = true;
                     mCachedThumb = d;
                 }
@@ -160,10 +166,10 @@ public class PackageTextView extends TextView implements TaskDescription.ThumbCh
 
     private void setDefaultThumb() {
         if (getTask() != null && !mThumbLoaded){
-            if (setDefaultThumb == null) {
-                setDefaultThumb = RecentTasksLoader.getInstance(mContext).getDefaultThumb();
+            if (sDefaultThumb == null) {
+                sDefaultThumb = RecentTasksLoader.getInstance(mContext).getDefaultThumb();
             }
-            updateThumb(setDefaultThumb, false);
+            updateThumb(sDefaultThumb, false);
         }
     }
 
@@ -203,7 +209,7 @@ public class PackageTextView extends TextView implements TaskDescription.ThumbCh
                     Log.d(TAG, "loadTaskThumb new:" + getLabel()
                             + " " + getTask().getPersistentTaskId());
                 }
-                RecentTasksLoader.getInstance(mContext).loadThumbnail(getTask());
+                RecentTasksLoader.getInstance(mContext).loadThumbnail(getTask(), true);
             } else {
                 if (DEBUG) {
                     Log.d(TAG, "loadTaskThumb cached:" + getLabel()
@@ -212,6 +218,10 @@ public class PackageTextView extends TextView implements TaskDescription.ThumbCh
                 setThumb(mCachedThumb);
             }
         }
+    }
+
+    public void reloadTaskThumb() {
+        mThumbLoaded = false;
     }
 
     public void setThumbRatio(float thumbRatio) {
@@ -230,6 +240,10 @@ public class PackageTextView extends TextView implements TaskDescription.ThumbCh
             setCompoundDrawables(null, d, null, null);
             if (getTask().isDocked()) {
                 setBackgroundColor(getResources().getColor(R.color.docked_task_bg_color));
+            } else if (getTask().isLocked()) {
+                setBackgroundColor(getResources().getColor(R.color.locked_task_bg_color));
+            } else {
+                setBackgroundColor(0);
             }
             if (configuration.mShowLabels) {
                 setText(getLabel());

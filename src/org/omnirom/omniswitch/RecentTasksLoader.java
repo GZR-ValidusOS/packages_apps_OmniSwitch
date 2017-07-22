@@ -18,7 +18,9 @@
 package org.omnirom.omniswitch;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 import org.omnirom.omniswitch.ui.BitmapCache;
@@ -47,7 +49,6 @@ import android.util.Log;
 public class RecentTasksLoader {
     private static final String TAG = "RecentTasksLoader";
     private static final boolean DEBUG = false;
-    private static final int MAX_TASKS = 50;
     private static final int THUMB_INIT_LOAD = 6;
     private static final int TASK_INIT_LOAD = 8;
 
@@ -69,6 +70,7 @@ public class RecentTasksLoader {
     private TaskDescription mPlaceholderTask;
     private PackageManager mPackageManager;
     private Drawable mDefaultAppIcon;
+    private Set<String> mLockedAppsList;
 
     final static BitmapFactory.Options sBitmapOptions;
 
@@ -101,6 +103,7 @@ public class RecentTasksLoader {
         mContext = context;
         mHandler = new Handler();
         mLoadedTasks = new CopyOnWriteArrayList<TaskDescription>();
+        mLockedAppsList = new HashSet<String>();
         mActivityManager = (ActivityManager)
                 mContext.getSystemService(Context.ACTIVITY_SERVICE);
         mPackageManager = mContext.getPackageManager();
@@ -230,6 +233,8 @@ public class RecentTasksLoader {
 
         final long currentTime = System.currentTimeMillis();
         final long bootTimeMillis = currentTime - SystemClock.elapsedRealtime();
+        mLockedAppsList.clear();
+        mLockedAppsList.addAll(mConfiguration.mLockedAppList);
 
         mTaskLoader = new AsyncTask<Void, List<TaskDescription>, Void>() {
             @Override
@@ -274,7 +279,7 @@ public class RecentTasksLoader {
                 int preloadTaskNum = 0;
                 final boolean withIconPack = IconPackHelper.getInstance(mContext).isIconPackLoaded();
 
-                for (int i = 0; i < numTasks && i < MAX_TASKS; ++i) {
+                for (int i = 0; i < numTasks; ++i) {
                     if (isCancelled()) {
                         break;
                     }
@@ -287,6 +292,10 @@ public class RecentTasksLoader {
                     TaskDescription item = createTaskDescription(recentInfo.id,
                             recentInfo.persistentId, recentInfo.stackId,
                             recentInfo.baseIntent, recentInfo.origActivity);
+
+                    if (mLockedAppsList.contains(item.getPackageName())) {
+                        item.setLocked(true);
+                    }
 
                     Intent intent = new Intent(recentInfo.baseIntent);
                     if (recentInfo.origActivity != null) {
@@ -389,11 +398,16 @@ public class RecentTasksLoader {
                     isFirstValidTask = false;
 
                     if (recentInfo.stackId != DOCKED_STACK_ID) {
-                        mLoadedTasks.add(item);
+                        if (item.isLocked() && mConfiguration.mTopSortLockedApps) {
+                            mLoadedTasks.add(mDockedTask != null ? 1 : 0, item);
+                        } else {
+                            mLoadedTasks.add(item);
+                        }
                     }
                     if (withIcons && preloadTaskNum < TASK_INIT_LOAD) {
-                        loadTaskIcon(item, withIconPack);
-                        item.setLabel(item.resolveInfo.loadLabel(mPackageManager).toString());
+                        String label = item.resolveInfo.loadLabel(mPackageManager).toString();
+                        loadTaskIcon(item, withIconPack, label);
+                        item.setLabel(label);
                         preloadTaskNum++;
                     } else {
                         item.setDefaultIcon(mDefaultAppIcon);
@@ -442,15 +456,19 @@ public class RecentTasksLoader {
         return thumbnail;
     }
 
-    void loadTaskIcon(TaskDescription td, boolean withIconPack) {
-        Drawable icon = getFullResIcon(td.resolveInfo, withIconPack);
+    void loadTaskIcon(TaskDescription td, boolean withIconPack, String label) {
+        Drawable icon = getFullResIcon(td.resolveInfo, withIconPack, label);
         if (icon == null) {
             icon = mDefaultAppIcon;
         }
         td.setIcon(icon);
     }
 
-    private Drawable getFullResIcon(ResolveInfo info, boolean withIconPack) {
+    private IconPackHelper getIconPackHelper() {
+        return IconPackHelper.getInstance(mContext);
+    }
+
+    private Drawable getFullResIcon(ResolveInfo info, boolean withIconPack, String label) {
         Resources resources;
         try {
             resources = mPackageManager
@@ -461,16 +479,22 @@ public class RecentTasksLoader {
         if (resources != null) {
             int iconId = 0;
             if (withIconPack) {
-                iconId = IconPackHelper.getInstance(mContext).getResourceIdForActivityIcon(info.activityInfo);
+                iconId = getIconPackHelper().getResourceIdForActivityIcon(info.activityInfo);
                 if (iconId != 0) {
                     return IconPackHelper.getInstance(mContext).getIconPackResources().getDrawable(iconId);
                 }
             }
-
             iconId = info.activityInfo.getIconResource();
             if (iconId != 0) {
                 try {
-                    return resources.getDrawable(iconId, null);
+                    Drawable d = resources.getDrawable(iconId, null);
+                    if (withIconPack) {
+                        d = BitmapUtils.compose(resources,
+                                d, mContext, getIconPackHelper().getIconBackFor(label),
+                                getIconPackHelper().getIconMask(), getIconPackHelper().getIconUpon(),
+                                getIconPackHelper().getIconScale(), mConfiguration.mIconSize, mConfiguration.mDensity);
+                    }
+                    return d;
                 } catch (Exception e) {
                 }
             }
@@ -478,11 +502,11 @@ public class RecentTasksLoader {
         return null;
     }
 
-    public void loadThumbnail(final TaskDescription td) {
+    public void loadThumbnail(final TaskDescription td, boolean force) {
         if (!mHasThumbPermissions) {
             return;
         }
-        if (td.isThumbPreloaded()) {
+        if (td.isThumbPreloaded() && !force) {
             Bitmap b = td.getThumbPreloaded();
             if (b != null) {
                 if (DEBUG) {
@@ -510,6 +534,7 @@ public class RecentTasksLoader {
                 td.setThumbLoading(true);
                 Bitmap b = getThumbnail(td.persistentTaskId);
                 if (b != null) {
+                    td.setThumbLoading(false);
                     td.setThumb(b);
                 }
 
@@ -523,13 +548,14 @@ public class RecentTasksLoader {
     public void loadTaskInfo(final TaskDescription td) {
         synchronized(td) {
             if (!td.isPreloadedTask()) {
+                String label = td.resolveInfo.loadLabel(mPackageManager).toString();
                 final boolean withIconPack = IconPackHelper.getInstance(mContext).isIconPackLoaded();
-                Drawable icon = getFullResIcon(td.resolveInfo, withIconPack);
+                Drawable icon = getFullResIcon(td.resolveInfo, withIconPack, label);
                 if (icon == null) {
                     icon = mDefaultAppIcon;
                 }
                 td.setIcon(icon);
-                td.setLabel(td.resolveInfo.loadLabel(mPackageManager).toString());
+                td.setLabel(label);
             }
         }
     }

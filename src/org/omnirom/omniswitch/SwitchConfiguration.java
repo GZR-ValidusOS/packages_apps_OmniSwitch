@@ -40,7 +40,7 @@ public class SwitchConfiguration {
     public boolean mAnimate = true;
     public int mIconSize = 60; // in dip
     public int mIconSizePx = 60;
-    public int mQSActionSize = 60; // in dp
+    public int mQSActionSizePx = 60; // in px
     public int mActionSizePx = 48; // in px
     public int mOverlayIconSizeDp = 30;
     public int mOverlayIconSizePx = 30;
@@ -63,7 +63,6 @@ public class SwitchConfiguration {
     public boolean mAutoHide;
     public static final int AUTO_HIDE_DEFAULT = 3000; // 3s
     public boolean mDragHandleShow = true;
-    public int mGravity;
     public boolean mRestrictedMode;
     public int mLevelHeight; // in px
     public int mItemChangeWidthX; // in px - maximum value - can be lower if more items
@@ -97,11 +96,12 @@ public class SwitchConfiguration {
     public BgStyle mBgStyle = BgStyle.SOLID_LIGHT;
     public boolean mLaunchStatsEnabled;
     public boolean mRevertRecents;
-    public int mIconSizeQuickDp = 100; // dpi
     public int mIconSizeQuickPx = 100;
     // TODO do we need a setting for this
     public boolean mLoadThumbOnSwipe = true;
     public boolean mDimActionButton;
+    public List<String> mLockedAppList = new ArrayList<String>();
+    public boolean mTopSortLockedApps;
 
     // old pref slots
     private static final String PREF_DRAG_HANDLE_COLOR = "drag_handle_color";
@@ -163,10 +163,11 @@ public class SwitchConfiguration {
         mLevelHeight = Math.round(80 * mDensity);
         mItemChangeWidthX = Math.round(40 * mDensity);
         mActionSizePx = Math.round(48 * mDensity);
+        mQSActionSizePx = Math.round(60 * mDensity);
         mOverlayIconSizePx = Math.round(mOverlayIconSizeDp * mDensity);
         mOverlayIconBorderPx =  Math.round(mOverlayIconBorderDp * mDensity);
         mIconBorderHorizontalPx = Math.round(mIconBorderHorizontalDp * mDensity);
-        mIconSizeQuickPx = Math.round(mIconSizeQuickDp * mDensity);
+        mIconSizeQuickPx = Math.round(100 * mDensity);
         mIconBorderPx = Math.round(mIconBorderDp * mDensity);
         // Render the default thumbnail background
         mThumbnailWidth = (int) context.getResources().getDimensionPixelSize(
@@ -238,8 +239,6 @@ public class SwitchConfiguration {
         mDragHandleShow = prefs.getBoolean(
                 SettingsActivity.PREF_DRAG_HANDLE_ENABLE, true);
         mDimBehind = prefs.getBoolean(SettingsActivity.PREF_DIM_BEHIND, false);
-        String gravity = prefs.getString(SettingsActivity.PREF_GRAVITY, "0");
-        mGravity = Integer.valueOf(gravity);
         mDefaultDragHandleWidth = Math.round(20 * mDensity);
         mDragHandleWidth = prefs.getInt(
                     SettingsActivity.PREF_HANDLE_WIDTH, mDefaultDragHandleWidth);
@@ -283,6 +282,10 @@ public class SwitchConfiguration {
         mRevertRecents = prefs.getBoolean(SettingsActivity.PREF_REVERT_RECENTS, false);
         mLoadThumbOnSwipe = prefs.getBoolean(SettingsActivity.PREF_SWIPE_THUMB_UPDATE, true);
         mDimActionButton = prefs.getBoolean(SettingsActivity.PREF_DIM_ACTION_BUTTON, false);
+        mLockedAppList.clear();
+        String lockedAppsListString = prefs.getString(SettingsActivity.PREF_LOCKED_APPS_LIST, "");
+        Utils.parseLockedApps(lockedAppsListString, mLockedAppList);
+        mTopSortLockedApps = prefs.getBoolean(SettingsActivity.PREF_LOCKED_APPS_SORT, false);
 
         for(OnSharedPreferenceChangeListener listener : mPrefsListeners) {
             if(DEBUG){
